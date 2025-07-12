@@ -71,7 +71,7 @@ class main_menu(ttk.Window):
         self.formatFrame.pack(fill=X, side=TOP, expand=False)
         self.formatLabel = ttk.Label(self.formatFrame, text="Format: ")
         self.formatLabel.pack(fill=X, side=LEFT, expand=True)
-        self.formatBox = ttk.Combobox(self.formatFrame, values=self.supportedFormats, state="readonly")
+        self.formatBox = ttk.Combobox(self.formatFrame, values=self.supportedFormats, state=READONLY)
         self.formatBox.pack(fill=X, side=RIGHT, expand=True)
         self.formatBox.set(self.supportedFormats[0])
         self.formatBox.bind("<<ComboboxSelected>>", self.validate_format_selection)
@@ -81,7 +81,7 @@ class main_menu(ttk.Window):
         self.modeFrame.pack(fill=X, side=TOP, expand=False)
         self.modeLabel = ttk.Label(self.modeFrame, text="Export mode: ")
         self.modeLabel.pack(fill=X, side=LEFT, expand=True)
-        self.modeBox = ttk.Combobox(self.modeFrame, values=list(self.exportModes.values()), state="readonly")
+        self.modeBox = ttk.Combobox(self.modeFrame, values=list(self.exportModes.values()), state=READONLY)
         self.modeBox.pack(fill=X, side=RIGHT, expand=True)
         self.modeBox.set(self.exportModes["selected"])
 
@@ -136,7 +136,7 @@ class main_menu(ttk.Window):
         
         self.totalFilesNumber = ttk.Entry(
             self.fileSelectionFrame,
-            state=DISABLED,
+            state=READONLY,
             width=6
         )
         self.totalFilesNumber.pack(fill=NONE, side=RIGHT, expand=True, pady=10)
@@ -161,7 +161,7 @@ class main_menu(ttk.Window):
             index = len(self.loadedFiles) - 1
 
         if not self.selectedFileNumber.get() == "":
-            self.selectedFileNumber.set(str(index))
+            self.selectedFileNumber.set(index+1)
 
         self.selectedFile = self.loadedFiles[index]
 
@@ -171,26 +171,26 @@ class main_menu(ttk.Window):
     
     def next_file(self, *_):
         self.select_file(self.loadedFiles.index(self.selectedFile)+1)
-        self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile))
+        self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile)+1)
 
     def previous_file(self, *_):
         self.select_file(self.loadedFiles.index(self.selectedFile)-1)
-        self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile))
+        self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile)+1)
 
 
     def number_entry_changed(self, *_):
         if self.selectedFileNumber.get() == "":
             self.select_file(0)
         else:
-            self.select_file(int(self.selectedFileNumber.get()))
+            self.select_file(int(self.selectedFileNumber.get())-1)
 
     
     def validate_format_selection(self, *_):
         if self.formatBox.get() == "gif":
             self.modeBox.set(self.exportModes["all"])
-            self.modeBox.configure(state="disabled")
+            self.modeBox.configure(state=DISABLED)
         else:
-            self.modeBox.configure(state="readonly")
+            self.modeBox.configure(state=READONLY)
 
 
     def validate_file_number(self, value):
@@ -223,7 +223,7 @@ class main_menu(ttk.Window):
             return False
         
     def reset_file_number_box(self):
-        self.selectedFileNumber.set(str(self.loadedFiles.index(self.selectedFile)))
+        self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile)+1)
         
 
     def init_top_menu(self):
@@ -245,8 +245,6 @@ class main_menu(ttk.Window):
 
 
     def select_directory(self):
-        self.loadedFiles = []
-
         self.sourceDirectory = askdirectory(
             parent=self, 
             mustexist=True, 
@@ -277,6 +275,8 @@ class main_menu(ttk.Window):
 
 
     def load_directory(self):
+        self.loadedFiles = []
+
         for file in os.listdir(self.sourceDirectory):
             if os.path.isfile(self.sourceDirectory + "/" + file) and str(file).endswith(".bin"):
                 self.loadedFiles.append(self.sourceDirectory + "/" + file)
@@ -293,7 +293,11 @@ class main_menu(ttk.Window):
             ).show_toast()
 
             self.select_file(0)
-            self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile))
+            self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile)+1)
+            self.totalFilesNumber.configure(state=ACTIVE)
+            self.totalFilesNumber.delete(0, END)
+            self.totalFilesNumber.insert(0, str(len(self.loadedFiles)))
+            self.totalFilesNumber.configure(state=READONLY)
             self.show_GUI()
         else:
             popup.ToastNotification(
