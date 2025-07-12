@@ -20,7 +20,7 @@ class main_menu(ttk.Window):
     def __init__(self):
         # Initialize the main window and set the title, theme and minimal size
         super().__init__("Screenshot export", "darkly")
-        self.minsize(550, 300)
+        self.minsize(600, 500)
 
         # Set up the default theme and style font
         self.defaultFont = "Consolas"
