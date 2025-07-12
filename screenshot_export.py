@@ -7,9 +7,10 @@ from ttkbootstrap.constants import *
 from ttkbootstrap.dialogs import Messagebox
 from ttkbootstrap.tooltip import ToolTip
 
+from typing import Literal
+
 from tkinter.filedialog import askdirectory
 
-# from microbmp import MicroBMP
 from PIL import Image, ImageTk
 
 import os
@@ -19,7 +20,7 @@ class main_menu(ttk.Window):
     def __init__(self):
         # Initialize the main window and set the title, theme and minimal size
         super().__init__("Screenshot export", "darkly")
-        self.minsize(300, 200)
+        self.minsize(550, 300)
 
         # Set up the default theme and style font
         self.defaultFont = "Consolas"
@@ -31,6 +32,8 @@ class main_menu(ttk.Window):
         self.selectedFile = ""
         self.selectedFileNumber = ttk.StringVar()
 
+        self.supportedFormats = ("png", "bmp", "gif")
+        self.exportModes = {"selected":"Just the selected image", "all":"All"}
 
         self.init_GUI()
 
@@ -40,13 +43,18 @@ class main_menu(ttk.Window):
         self.init_shortcuts()
         self.init_main_GUI()
 
+        Messagebox.ok(
+            parent=self,
+            title="First step",
+            message="Please select a folder with .bin files from the PICO to start exporting them.",
+            alert=True
+        )
+
 
     def init_main_GUI(self):
         # These frames will only be shown once a directory is selected
         self.leftFrame = ttk.Frame(self, padding=10)
-        self.leftFrame.pack(anchor=NE, fill=NONE, side=LEFT, expand=False)
         self.rightFrame = ttk.Frame(self, padding=10)
-        self.rightFrame.pack(anchor=NW, fill=NONE, side=RIGHT, expand=False)
 
         self.operationFrame = ttk.LabelFrame(self.leftFrame, text="Select an operation to perform:", padding = 10)
         self.operationFrame.pack(fill=BOTH, side=LEFT, expand=False)
@@ -54,29 +62,35 @@ class main_menu(ttk.Window):
         self.previewFrame = ttk.LabelFrame(self.rightFrame, text="Select a file to preview:", padding=10)
         self.previewFrame.pack(fill=BOTH, side=LEFT, expand=False)
 
-        self.exportSelectedButton = ttk.Button(
-            self.operationFrame, 
-            text="Export just the selected image",
-            style="primary.TButton" 
-            """ command=pass """
-            )
-        self.exportSelectedButton.pack(fill=NONE, side=TOP, expand=False, pady=10)
+        self.exportFormatLabelFrame = ttk.LabelFrame(self.operationFrame, text="Select how should the file be exported", padding=10)
+        self.exportFormatLabelFrame.pack(fill=X, side=TOP, expand=False)
 
-        self.exportAllButton = ttk.Button(
-            self.operationFrame, 
-            text="Export all images from\nthe selected directory",
-            style="primary.TButton" 
-            """ command=pass """
-            )
-        self.exportAllButton.pack(fill=NONE, side=TOP, expand=False, pady=10)
+        self.formatFrame = ttk.Frame(self.exportFormatLabelFrame)
+        self.formatFrame.pack(fill=X, side=TOP, expand=False)
+        self.formatLabel = ttk.Label(self.formatFrame, text="Format: ")
+        self.formatLabel.pack(fill=X, side=LEFT, expand=True)
+        self.formatBox = ttk.Combobox(self.formatFrame, values=self.supportedFormats, state="readonly")
+        self.formatBox.pack(fill=X, side=RIGHT, expand=True)
+        self.formatBox.set(self.supportedFormats[0])
+        self.formatBox.bind("<<ComboboxSelected>>", self.validate_format_selection)
 
-        self.createGIFButton = ttk.Button(
+
+        self.modeFrame = ttk.Frame(self.exportFormatLabelFrame)
+        self.modeFrame.pack(fill=X, side=TOP, expand=False)
+        self.modeLabel = ttk.Label(self.modeFrame, text="Export mode: ")
+        self.modeLabel.pack(fill=X, side=LEFT, expand=True)
+        self.modeBox = ttk.Combobox(self.modeFrame, values=list(self.exportModes.values()), state="readonly")
+        self.modeBox.pack(fill=X, side=RIGHT, expand=True)
+        self.modeBox.set(self.exportModes["selected"])
+
+
+        self.exportButton = ttk.Button(
             self.operationFrame, 
-            text="Export all images from the\nselected directory as a GIF",
-            style="primary.TButton" 
-            """ command=pass """
-        )
-        self.createGIFButton.pack(fill=NONE, side=TOP, expand=False, pady=10)
+            text="Export",
+            style="primary.TButton",
+            command=self.export
+            )
+        self.exportButton.pack(fill=X, side=BOTTOM, expand=False, pady=10)
 
 
         self.selectedFileFrame = ttk.LabelFrame(self.previewFrame, text="Selected image:", padding = 10)
@@ -107,13 +121,11 @@ class main_menu(ttk.Window):
         self.nextFileButton.pack(fill=NONE, side=RIGHT, expand=False, pady=10)
 
 
-        vcmd = (self.register(self.validate_file_number), '%P')
-
         self.currentFileNumberBox = ttk.Entry(
             self.fileSelectionFrame,
             textvariable=self.selectedFileNumber,
             validate="all",
-            validatecommand=vcmd,
+            validatecommand=(self.register(self.validate_file_number), '%P'),
             invalidcommand=self.reset_file_number_box,
             width=6
         )
@@ -129,7 +141,16 @@ class main_menu(ttk.Window):
 
         self.separatorLabel = ttk.Label(self.fileSelectionFrame, text="/")
         self.separatorLabel.pack(anchor=CENTER, fill=NONE, side=LEFT, expand=True, pady=10)
-    
+
+
+    def show_GUI(self):
+        self.leftFrame.pack(anchor=NE, fill=NONE, side=LEFT, expand=False)
+        self.rightFrame.pack(anchor=NW, fill=NONE, side=RIGHT, expand=False)
+
+    def hide_GUI(self):
+        self.leftFrame.pack_forget()
+        self.rightFrame.pack_forget()
+
 
     def select_file(self, index:int):
         if index >= len(self.loadedFiles):
@@ -137,20 +158,22 @@ class main_menu(ttk.Window):
         elif index < 0:
             index = len(self.loadedFiles) - 1
 
-        self.selectedFileNumber.set(str(index))
+        if not self.selectedFileNumber.get() == "":
+            self.selectedFileNumber.set(str(index))
 
         self.selectedFile = self.loadedFiles[index]
 
         self.pathLabel.configure(text=self.selectedFile)
         self.update_image_preview()
 
-
     
     def next_file(self, *_):
         self.select_file(self.loadedFiles.index(self.selectedFile)+1)
+        self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile))
 
     def previous_file(self, *_):
         self.select_file(self.loadedFiles.index(self.selectedFile)-1)
+        self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile))
 
 
     def number_entry_changed(self, *_):
@@ -159,13 +182,20 @@ class main_menu(ttk.Window):
         else:
             self.select_file(int(self.selectedFileNumber.get()))
 
+    
+    def validate_format_selection(self, *_):
+        if self.formatBox.get() == "gif":
+            self.modeBox.set(self.exportModes["all"])
+            self.modeBox.configure(state="disabled")
+        else:
+            self.modeBox.configure(state="readonly")
 
-    def validate_file_number(self, input):
+
+    def validate_file_number(self, value):
         try:
-            input = int(input)
+            value = int(value)
         except:
-            if input == "":
-                print(self.selectedFileNumber.get())
+            if value == "":
                 return True
                 
             popup.ToastNotification(
@@ -178,7 +208,7 @@ class main_menu(ttk.Window):
 
             return False
         
-        if 0 <= input < len(self.loadedFiles):
+        if 0 <= value < len(self.loadedFiles):
             return True
         else:
             popup.ToastNotification(
@@ -207,8 +237,10 @@ class main_menu(ttk.Window):
         self.topMenu.add_cascade(label="File", menu=self.fileMenu)
         self.configure(menu=self.topMenu)
 
+
     def init_shortcuts(self):
         self.bind("<Control-o>", self.select_directory)
+
 
     def select_directory(self):
         self.loadedFiles = []
@@ -259,6 +291,8 @@ class main_menu(ttk.Window):
             ).show_toast()
 
             self.select_file(0)
+            self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile))
+            self.show_GUI()
         else:
             popup.ToastNotification(
                     title=f"Operation cancelled",
@@ -267,6 +301,7 @@ class main_menu(ttk.Window):
                     icon="❌",
                     bootstyle=WARNING
             ).show_toast()
+            self.hide_GUI()
        
 
     @staticmethod
@@ -286,7 +321,7 @@ class main_menu(ttk.Window):
         return (r8, g8, b8)
     
 
-    def convert_image(self, path, size:tuple=(240, 240)):
+    def convert_image(self, path, size:tuple=(240, 240), scaleTo:tuple=(240,240)): 
 
         outputImage = Image.new("RGB", size)
 
@@ -296,25 +331,65 @@ class main_menu(ttk.Window):
                 value = tmp.read(2)
                 color888 = self.color(int.from_bytes(value, 'big'))
                 outputImage.putpixel((int((i/2)%size[0]), int((i/2)//size[1])), color888)
+                outputImage.resize(scaleTo, Image.Resampling.NEAREST)
             tmp.close()
 
         return outputImage
-        
-        
+    
 
+    def save_image(self, inputPath, savePath):
+        outputImage = self.convert_image(inputPath)
+        outputImage.save(savePath)
+
+    def export_selected(self, *_):
+        self.export(self.selectedFile)
+    
+
+    def export(self, *_):
+        format = self.formatBox.get()
+
+        if self.modeBox.get() == self.exportModes["selected"]:
+            filesToExport = [self.selectedFile]
+        elif self.modeBox.get() == self.exportModes["all"]:
+            filesToExport = self.loadedFiles
+        else:
+            raise ValueError("Unknown export mode")
+        
+        outputDirectory = askdirectory(title="Select a directory to export to")
+        if outputDirectory == "":
+            popup.ToastNotification(
+                title="Operation cancelled",
+                message="You did not select any directory.",
+                duration=5000,
+                icon="📁",
+                alert=True,
+                bootstyle=INFO
+            ).show_toast()
+            return
+        
+        if format in ["png", "bmp"]:
+            for file in filesToExport:
+                exportPath = outputDirectory + "/" + str(file).split("/")[-1][:-3] + format
+                self.save_image(file, exportPath)
+        elif format == "gif":
+            exportPath = outputDirectory + "/" + (str(self.loadedFiles[0]).split("/")[-1][:-3]) + format
+
+            frames = []
+            
+            for file in filesToExport:
+                frames.append(self.convert_image(file))
+
+            firstFrame = frames[0]
+            firstFrame.save(
+                exportPath,
+                format="GIF",
+                append_images=frames[1:],
+                save_all=True,
+                duration=50,
+                loop=0
+            )
+
+        
 if __name__ == "__main__":
     mainWindow = main_menu()
-    mainWindow.mainloop()
-
-
-# outputImage = MicroBMP(240, 240, 24)
-
-# with open(inputFile, 'rb') as tmp:
-#     for i in range(0, len(tmp.read()), 2):
-#         tmp.seek(i) 
-#         value = tmp.read(2)
-#         color888 = color(int.from_bytes(value, 'big'))
-#         outputImage[int((i/2)%240), int((i/2)//240)] = color888
-#     tmp.close()
-
-# outputImage.save(outputFile)          
+    mainWindow.mainloop()      
