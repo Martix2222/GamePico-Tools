@@ -50,6 +50,8 @@ class main_menu(ttk.Window):
             alert=True
         )
 
+        self.select_directory()
+
 
     def init_main_GUI(self):
         # These frames will only be shown once a directory is selected
@@ -331,7 +333,9 @@ class main_menu(ttk.Window):
                 value = tmp.read(2)
                 color888 = self.color(int.from_bytes(value, 'big'))
                 outputImage.putpixel((int((i/2)%size[0]), int((i/2)//size[1])), color888)
-                outputImage.resize(scaleTo, Image.Resampling.NEAREST)
+            
+            if not size == scaleTo:
+                outputImage = outputImage.resize(scaleTo, Image.Resampling.NEAREST)
             tmp.close()
 
         return outputImage
