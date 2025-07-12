@@ -9,8 +9,8 @@ from ttkbootstrap.tooltip import ToolTip
 
 from tkinter.filedialog import askdirectory
 
-from microbmp import MicroBMP
-from PIL import Image
+# from microbmp import MicroBMP
+from PIL import Image, ImageTk
 
 import os
 
@@ -26,7 +26,11 @@ class main_menu(ttk.Window):
         self.style.configure(".", font=f"{self.defaultFont} 9")
 
         self.sourceDirectory = ""
-        self.foundFiles = []
+        self.loadedFiles = []
+
+        self.selectedFile = ""
+        self.selectedFileNumber = ttk.StringVar()
+
 
         self.init_GUI()
 
@@ -42,9 +46,13 @@ class main_menu(ttk.Window):
         self.leftFrame = ttk.Frame(self, padding=10)
         self.leftFrame.pack(anchor=NE, fill=NONE, side=LEFT, expand=False)
         self.rightFrame = ttk.Frame(self, padding=10)
+        self.rightFrame.pack(anchor=NW, fill=NONE, side=RIGHT, expand=False)
 
         self.operationFrame = ttk.LabelFrame(self.leftFrame, text="Select an operation to perform:", padding = 10)
         self.operationFrame.pack(fill=BOTH, side=LEFT, expand=False)
+
+        self.previewFrame = ttk.LabelFrame(self.rightFrame, text="Select a file to preview:", padding=10)
+        self.previewFrame.pack(fill=BOTH, side=LEFT, expand=False)
 
         self.exportSelectedButton = ttk.Button(
             self.operationFrame, 
@@ -69,6 +77,121 @@ class main_menu(ttk.Window):
             """ command=pass """
         )
         self.createGIFButton.pack(fill=NONE, side=TOP, expand=False, pady=10)
+
+
+        self.selectedFileFrame = ttk.LabelFrame(self.previewFrame, text="Selected image:", padding = 10)
+        self.selectedFileFrame.pack(fill=BOTH, side=TOP, expand=False)
+
+        self.pathLabel = ttk.Label(self.selectedFileFrame, text="None", wraplength=500, bootstyle=(SUCCESS, INVERSE))
+        self.pathLabel.pack(fill=NONE, side=TOP, expand=False, pady=10)
+
+        self.imageLabel = ttk.Label(self.selectedFileFrame)
+        self.imageLabel.pack(anchor=CENTER, fill=None, side=TOP, expand=True, pady=10)
+
+        self.fileSelectionFrame = ttk.Frame(self.previewFrame)
+        self.fileSelectionFrame.pack(fill=X, side=TOP, expand=False, pady=10)
+
+        self.previousFileButton = ttk.Button(
+            self.fileSelectionFrame, 
+            text="<",
+            style="primary.TButton", 
+            command=self.previous_file
+        )
+        self.nextFileButton = ttk.Button(
+            self.fileSelectionFrame, 
+            text=">",
+            style="primary.TButton" ,
+            command=self.next_file
+        )
+        self.previousFileButton.pack(fill=NONE, side=LEFT, expand=False, pady=10)
+        self.nextFileButton.pack(fill=NONE, side=RIGHT, expand=False, pady=10)
+
+
+        vcmd = (self.register(self.validate_file_number), '%P')
+
+        self.currentFileNumberBox = ttk.Entry(
+            self.fileSelectionFrame,
+            textvariable=self.selectedFileNumber,
+            validate="all",
+            validatecommand=vcmd,
+            invalidcommand=self.reset_file_number_box,
+            width=6
+        )
+        self.currentFileNumberBox.bind("<KeyRelease>", self.number_entry_changed)
+        self.currentFileNumberBox.pack(fill=NONE, side=LEFT, expand=True, pady=10)
+        
+        self.totalFilesNumber = ttk.Entry(
+            self.fileSelectionFrame,
+            state=DISABLED,
+            width=6
+        )
+        self.totalFilesNumber.pack(fill=NONE, side=RIGHT, expand=True, pady=10)
+
+        self.separatorLabel = ttk.Label(self.fileSelectionFrame, text="/")
+        self.separatorLabel.pack(anchor=CENTER, fill=NONE, side=LEFT, expand=True, pady=10)
+    
+
+    def select_file(self, index:int):
+        if index >= len(self.loadedFiles):
+            index = 0
+        elif index < 0:
+            index = len(self.loadedFiles) - 1
+
+        self.selectedFileNumber.set(str(index))
+
+        self.selectedFile = self.loadedFiles[index]
+
+        self.pathLabel.configure(text=self.selectedFile)
+        self.update_image_preview()
+
+
+    
+    def next_file(self, *_):
+        self.select_file(self.loadedFiles.index(self.selectedFile)+1)
+
+    def previous_file(self, *_):
+        self.select_file(self.loadedFiles.index(self.selectedFile)-1)
+
+
+    def number_entry_changed(self, *_):
+        if self.selectedFileNumber.get() == "":
+            self.select_file(0)
+        else:
+            self.select_file(int(self.selectedFileNumber.get()))
+
+
+    def validate_file_number(self, input):
+        try:
+            input = int(input)
+        except:
+            if input == "":
+                print(self.selectedFileNumber.get())
+                return True
+                
+            popup.ToastNotification(
+                title=f"Invalid value",
+                message=f"This must be a number between {0} (inclusive) and {len(self.loadedFiles)} (exclusive).",
+                duration=5000,
+                icon="❌",
+                bootstyle=WARNING
+            ).show_toast()
+
+            return False
+        
+        if 0 <= input < len(self.loadedFiles):
+            return True
+        else:
+            popup.ToastNotification(
+                title=f"Invalid value",
+                message=f"This must be a number between {0} (inclusive) and {len(self.loadedFiles)} (exclusive).",
+                duration=5000,
+                icon="❌",
+                bootstyle=WARNING
+            ).show_toast()
+            return False
+        
+    def reset_file_number_box(self):
+        self.selectedFileNumber.set(str(self.loadedFiles.index(self.selectedFile)))
         
 
     def init_top_menu(self):
@@ -88,7 +211,7 @@ class main_menu(ttk.Window):
         self.bind("<Control-o>", self.select_directory)
 
     def select_directory(self):
-        self.foundFiles = []
+        self.loadedFiles = []
 
         self.sourceDirectory = askdirectory(
             parent=self, 
@@ -112,20 +235,30 @@ class main_menu(ttk.Window):
                     bootstyle=WARNING
             ).show_toast()
 
+    
+    def update_image_preview(self):
+        newImage = self.convert_image(self.selectedFile)
+        self.previewImage = ImageTk.PhotoImage(newImage)
+        self.imageLabel.configure(image=self.previewImage)
+
 
     def load_directory(self):
         for file in os.listdir(self.sourceDirectory):
             if os.path.isfile(self.sourceDirectory + "/" + file) and str(file).endswith(".bin"):
-                self.foundFiles.append(self.sourceDirectory + "/" + file)
+                self.loadedFiles.append(self.sourceDirectory + "/" + file)
 
-        if len(self.foundFiles) > 0:
+        if len(self.loadedFiles) > 0:
+            self.loadedFiles.sort()
+            
             popup.ToastNotification(
                 title=f"Success",
-                message=f"Successfully found {len(self.foundFiles)} supported files.",
+                message=f"Successfully found {len(self.loadedFiles)} supported files.",
                 duration=5000,
                 icon="✅",
                 bootstyle=SUCCESS
             ).show_toast()
+
+            self.select_file(0)
         else:
             popup.ToastNotification(
                     title=f"Operation cancelled",
@@ -152,6 +285,22 @@ class main_menu(ttk.Window):
 
         return (r8, g8, b8)
     
+
+    def convert_image(self, path, size:tuple=(240, 240)):
+
+        outputImage = Image.new("RGB", size)
+
+        with open(path, 'rb') as tmp:
+            for i in range(0, len(tmp.read()), 2):
+                tmp.seek(i) 
+                value = tmp.read(2)
+                color888 = self.color(int.from_bytes(value, 'big'))
+                outputImage.putpixel((int((i/2)%size[0]), int((i/2)//size[1])), color888)
+            tmp.close()
+
+        return outputImage
+        
+        
 
 if __name__ == "__main__":
     mainWindow = main_menu()
