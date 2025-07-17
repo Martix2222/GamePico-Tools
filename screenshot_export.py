@@ -328,7 +328,7 @@ class main_menu(ttk.Window):
     
 
     def convert_image(self, path, size:tuple=(240, 240), scaleTo:tuple=(240,240)): 
-
+        print(f"Converting image: {path}")
         outputImage = Image.new("RGB", size)
 
         with open(path, 'rb') as tmp:
