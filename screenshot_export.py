@@ -5,7 +5,6 @@ import ttkbootstrap as ttk
 import ttkbootstrap.toast as popup
 from ttkbootstrap.constants import *
 from ttkbootstrap.dialogs import Messagebox
-from ttkbootstrap.tooltip import ToolTip
 
 from typing import Literal
 
@@ -16,7 +15,7 @@ from PIL import Image, ImageTk
 import os
 
 
-class main_menu(ttk.Window):
+class main_window(ttk.Window):
     def __init__(self):
         # Initialize the main window and set the title, theme and minimal size
         super().__init__("Screenshot export", "darkly")
@@ -399,5 +398,5 @@ class main_menu(ttk.Window):
 
         
 if __name__ == "__main__":
-    mainWindow = main_menu()
+    mainWindow = main_window()
     mainWindow.mainloop()      
