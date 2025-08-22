@@ -1,18 +1,26 @@
-# This script converts a binary file containing 16-bit color values (RGB565) that is generated when taking a screenshot
-# into a binary file with 24-bit RGB values. This binary file is then converted into a bmp image using the microbmp library.
-
 import ttkbootstrap as ttk
 import ttkbootstrap.toast as popup
 from ttkbootstrap.constants import *
 from ttkbootstrap.dialogs import Messagebox
 
-from typing import Literal
+from typing import TypedDict
 
 from tkinter.filedialog import askdirectory
 
 from PIL import Image, ImageTk
 
+import zlib
+# TODO implement file decompression
+
 import os
+
+class HeaderData(TypedDict):
+    headerLength: int
+    width: int
+    height: int
+    id: int
+    frameTime: int
+    compressed: bool
 
 
 class main_window(ttk.Window):
@@ -29,7 +37,9 @@ class main_window(ttk.Window):
         self.loadedFiles = []
 
         self.selectedFile = ""
-        self.selectedFileNumber = ttk.StringVar()
+        self.selectedFileIndex = ttk.StringVar()
+
+        self.frameTime_ms = 25
 
         self.supportedFormats = ("png", "bmp", "gif")
         self.exportModes = {"selected":"Just the selected image", "all":"All"}
@@ -45,7 +55,7 @@ class main_window(ttk.Window):
         Messagebox.ok(
             parent=self,
             title="First step",
-            message="Please select a folder with .bin files from the PICO to start exporting them.",
+            message="Please select a folder with .binFrame files from the PICO to start exporting them.",
             alert=True
         )
 
@@ -124,7 +134,7 @@ class main_window(ttk.Window):
 
         self.currentFileNumberBox = ttk.Entry(
             self.fileSelectionFrame,
-            textvariable=self.selectedFileNumber,
+            textvariable=self.selectedFileIndex,
             validate="all",
             validatecommand=(self.register(self.validate_file_number), '%P'),
             invalidcommand=self.reset_file_number_box,
@@ -159,29 +169,30 @@ class main_window(ttk.Window):
         elif index < 0:
             index = len(self.loadedFiles) - 1
 
-        if not self.selectedFileNumber.get() == "":
-            self.selectedFileNumber.set(index+1)
+        if not self.selectedFileIndex.get() == "":
+            self.selectedFileIndex.set(index+1)
 
         self.selectedFile = self.loadedFiles[index]
 
         self.pathLabel.configure(text=self.selectedFile)
+        self.load_and_convert_image(self.loadedFiles[index])
         self.update_image_preview()
 
     
     def next_file(self, *_):
         self.select_file(self.loadedFiles.index(self.selectedFile)+1)
-        self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile)+1)
+        self.selectedFileIndex.set(self.loadedFiles.index(self.selectedFile)+1)
 
     def previous_file(self, *_):
         self.select_file(self.loadedFiles.index(self.selectedFile)-1)
-        self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile)+1)
+        self.selectedFileIndex.set(self.loadedFiles.index(self.selectedFile)+1)
 
 
     def number_entry_changed(self, *_):
-        if self.selectedFileNumber.get() == "":
+        if self.selectedFileIndex.get() == "":
             self.select_file(0)
         else:
-            self.select_file(int(self.selectedFileNumber.get())-1)
+            self.select_file(int(self.selectedFileIndex.get())-1)
 
     
     def validate_format_selection(self, *_):
@@ -222,7 +233,7 @@ class main_window(ttk.Window):
             return False
         
     def reset_file_number_box(self):
-        self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile)+1)
+        self.selectedFileIndex.set(self.loadedFiles.index(self.selectedFile)+1)
         
 
     def init_top_menu(self):
@@ -252,7 +263,7 @@ class main_window(ttk.Window):
 
         
         if not self.sourceDirectory == "":
-            Messagebox.ok("The program will load all .bin files from the selected folder.",
+            Messagebox.ok("The program will load all .binFrame files from the selected folder.",
                           "Info",
                           True,
                           self)
@@ -268,8 +279,7 @@ class main_window(ttk.Window):
 
     
     def update_image_preview(self):
-        newImage = self.convert_image(self.selectedFile)
-        self.previewImage = ImageTk.PhotoImage(newImage)
+        self.previewImage = ImageTk.PhotoImage(self.convertedImage)
         self.imageLabel.configure(image=self.previewImage)
 
 
@@ -277,7 +287,7 @@ class main_window(ttk.Window):
         self.loadedFiles = []
 
         for file in os.listdir(self.sourceDirectory):
-            if os.path.isfile(self.sourceDirectory + "/" + file) and str(file).endswith(".bin"):
+            if os.path.isfile(self.sourceDirectory + "/" + file) and str(file).endswith(".binFrame"):
                 self.loadedFiles.append(self.sourceDirectory + "/" + file)
 
         if len(self.loadedFiles) > 0:
@@ -292,7 +302,7 @@ class main_window(ttk.Window):
             ).show_toast()
 
             self.select_file(0)
-            self.selectedFileNumber.set(self.loadedFiles.index(self.selectedFile)+1)
+            self.selectedFileIndex.set(self.loadedFiles.index(self.selectedFile)+1)
             self.totalFilesNumber.configure(state=ACTIVE)
             self.totalFilesNumber.delete(0, END)
             self.totalFilesNumber.insert(0, str(len(self.loadedFiles)))
@@ -325,34 +335,57 @@ class main_window(ttk.Window):
 
         return (r8, g8, b8)
     
+    @staticmethod
+    def is_bit_set(byte: int, bitIndex: int) -> bool:
+        return (byte >> bitIndex) & 1 == 1
 
-    def convert_image(self, path, size:tuple=(240, 240), scaleTo:tuple=(240,240)): 
+    
+
+    def read_file_header(self, path) -> HeaderData:
+        headerData = {"headerLength":32, "width":0, "height":0, "id":0, "frameTime":0, "compressed":False}
+        with open(path, 'rb') as f:
+            if int.from_bytes(f.read(2), "big", signed=False) == 1:
+                headerData["width"] = int.from_bytes(f.read(4), "big", signed=False)
+                headerData["height"] = int.from_bytes(f.read(4), "big", signed=False)
+                headerData["id"] = int.from_bytes(f.read(4), "big", signed=False)
+                headerData["frameTime"] = int.from_bytes(f.read(4), "big", signed=False)
+                headerData["compressed"] = self.is_bit_set(int.from_bytes(f.read(1), "big", signed=False), 0)
+                f.close()
+                return headerData
+            else:
+                f.close()
+                raise ValueError("Unsupported file version")
+
+
+    
+
+    def load_and_convert_image(self, path, scaleFactor:int = 1): 
         print(f"Converting image: {path}")
-        outputImage = Image.new("RGB", size)
+        headerData = self.read_file_header(path)
+        outputImage = Image.new("RGB", (headerData["width"], headerData["height"]))
 
         with open(path, 'rb') as tmp:
-            for i in range(0, len(tmp.read()), 2):
-                tmp.seek(i) 
+            tmp.seek(headerData["headerLength"])
+            for i in range(0, headerData["width"]*headerData["height"]*2, 2):
                 value = tmp.read(2)
                 color888 = self.color(int.from_bytes(value, 'big'))
-                outputImage.putpixel((int((i/2)%size[0]), int((i/2)//size[1])), color888)
+                outputImage.putpixel((int((i/2)%headerData["width"]), int((i/2)//headerData["height"])), color888)
             
-            if not size == scaleTo:
-                outputImage = outputImage.resize(scaleTo, Image.Resampling.NEAREST)
+            if not scaleFactor == 1:
+                outputImage = outputImage.resize((headerData["width"]*scaleFactor, headerData["height"]*scaleFactor), Image.Resampling.NEAREST)
             tmp.close()
 
-        return outputImage
+        self.convertedImage = outputImage
     
 
     def save_image(self, inputPath, savePath):
-        outputImage = self.convert_image(inputPath)
+        outputImage = self.convertedImage
         outputImage.save(savePath)
 
     def export_selected(self, *_):
-        self.export(self.selectedFile)
-    
+        self.export()
 
-    def export(self, *_):
+    def export(self):
         format = self.formatBox.get()
 
         if self.modeBox.get() == self.exportModes["selected"]:
@@ -376,16 +409,29 @@ class main_window(ttk.Window):
         
         if format in ["png", "bmp"]:
             for file in filesToExport:
-                exportPath = outputDirectory + "/" + str(file).split("/")[-1][:-3] + format
+                exportPath = outputDirectory + "/" + str(file).split("/")[-1][:-8] + format
                 self.save_image(file, exportPath)
         elif format == "gif":
-            exportPath = outputDirectory + "/" + (str(self.loadedFiles[0]).split("/")[-1][:-3]) + format
+            exportPath = outputDirectory + "/" + (str(self.loadedFiles[0]).split("/")[-1][:-8]) + format
 
             frames = []
+
+            self.selectedFileIndex.set(0)
             
             for file in filesToExport:
-                frames.append(self.convert_image(file))
+                headerData = self.read_file_header(file)
+                self.select_file(int(self.selectedFileIndex.get()))
 
+                for i in range(max(1, headerData["frameTime"]//self.frameTime_ms)):
+                    frames.append(self.convertedImage)
+                    print(i)
+
+                self.update_idletasks()
+                self.selectedFileIndex.set(filesToExport.index(file) + 1)
+
+            self.select_file(int(self.selectedFileIndex.get()))
+
+            print(f"Saving GIF: {exportPath}")
             firstFrame = frames[0]
             firstFrame.save(
                 exportPath,
