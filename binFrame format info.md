@@ -9,7 +9,7 @@
 
 > ### V1
 >
-> \[*All integer values are saved in a big-endian unsigned format*\]
+> \[*All integer values are saved in a big-endian unsigned format, unless specified otherwise*\]
 >
 > - The version umber in bytes 0-1 is set to 1
 >
@@ -21,7 +21,7 @@
 >  
 > - Each bit in byte 18 represents a flag that determines the structure of the data. Currently these bits are implemented:
 >
->   0. If bit 0 (counting from LSB = rightmost bit) is set to 1, the data following the header is compressed by the ZLIB algorithm (compression window size is handled by the ZLIB format itself), otherwise the data is uncompressed.
+>   0. If bit 0 (counting from LSB = rightmost bit) is set to 1, the data following the header is compressed by the GZIP algorithm, otherwise the data is uncompressed. The compression algorithm window size is specified as an int8 on byte 19 of the header. It specifies directly the wbits argument of the function. During decompression the same or larger value has to be used. In normal python it is just fine to use the gzip builtin library, because by default it has the wbits set to the maximum value. If you want to use the zlib library instead, you have to adhere to its documentation and make sure that the wbits argument is set to the proper value for a gzip file. (usually 16 + (8 to 15)\[That's the window size on the byte 19\])
 >
 >>  - (Other flags might get implemented later on.)
 >
