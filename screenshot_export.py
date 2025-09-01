@@ -9,18 +9,20 @@ from tkinter.filedialog import askdirectory
 
 from PIL import Image, ImageTk
 
-import zlib
+import gzip
 # TODO implement file decompression
 
 import os
 
 class HeaderData(TypedDict):
+    version: int
     headerLength: int
     width: int
     height: int
     id: int
     frameTime: int
-    compressed: bool
+    gzip: bool
+    gzip_wbits: int
 
 
 class main_window(ttk.Window):
@@ -231,7 +233,8 @@ class main_window(ttk.Window):
                 bootstyle=WARNING
             ).show_toast()
             return False
-        
+
+
     def reset_file_number_box(self):
         self.selectedFileIndex.set(self.loadedFiles.index(self.selectedFile)+1)
         
@@ -334,22 +337,26 @@ class main_window(ttk.Window):
         b8 = (b5 * 255) // 31
 
         return (r8, g8, b8)
-    
+
+
     @staticmethod
     def is_bit_set(byte: int, bitIndex: int) -> bool:
         return (byte >> bitIndex) & 1 == 1
 
-    
 
     def read_file_header(self, path) -> HeaderData:
-        headerData = {"headerLength":32, "width":0, "height":0, "id":0, "frameTime":0, "compressed":False}
         with open(path, 'rb') as f:
             if int.from_bytes(f.read(2), "big", signed=False) == 1:
+                headerData = HeaderData()
+                headerData["version"] = 1
+                headerData["headerLength"] = 32
                 headerData["width"] = int.from_bytes(f.read(4), "big", signed=False)
                 headerData["height"] = int.from_bytes(f.read(4), "big", signed=False)
                 headerData["id"] = int.from_bytes(f.read(4), "big", signed=False)
                 headerData["frameTime"] = int.from_bytes(f.read(4), "big", signed=False)
-                headerData["compressed"] = self.is_bit_set(int.from_bytes(f.read(1), "big", signed=False), 0)
+                flagByte = f.read(1)
+                headerData["gzip"] = self.is_bit_set(int.from_bytes(flagByte, "big", signed=False), 0)
+                headerData["gzip_wbits"] = int.from_bytes(f.read(1), "big", signed=False)
                 f.close()
                 return headerData
             else:
@@ -357,23 +364,44 @@ class main_window(ttk.Window):
                 raise ValueError("Unsupported file version")
 
 
-    
-
     def load_and_convert_image(self, path, scaleFactor:int = 1): 
         print(f"Converting image: {path}")
         headerData = self.read_file_header(path)
         outputImage = Image.new("RGB", (headerData["width"], headerData["height"]))
 
-        with open(path, 'rb') as tmp:
-            tmp.seek(headerData["headerLength"])
-            for i in range(0, headerData["width"]*headerData["height"]*2, 2):
-                value = tmp.read(2)
-                color888 = self.color(int.from_bytes(value, 'big'))
-                outputImage.putpixel((int((i/2)%headerData["width"]), int((i/2)//headerData["height"])), color888)
-            
-            if not scaleFactor == 1:
-                outputImage = outputImage.resize((headerData["width"]*scaleFactor, headerData["height"]*scaleFactor), Image.Resampling.NEAREST)
-            tmp.close()
+        with open(path, 'rb') as f:
+            if headerData["version"] == 1:
+                # Decompress data if the gzip compression flag is True
+                if headerData["gzip"]:
+                    try:
+                        f.seek(headerData["headerLength"])
+                        rawData = gzip.decompress(f.read())
+                    except gzip.BadGzipFile:
+                        popup.ToastNotification(
+                        title=f"The file is corrupted",
+                        message=f"The data in the selected file is either corrupted or in an unsupported format.",
+                        duration=5000,
+                        icon="❌",
+                        bootstyle=WARNING
+                        ).show_toast()
+                        return
+                else:
+                    f.seek(headerData["headerLength"])
+                    rawData = f.read()
+
+                f.close()
+
+                for i in range(0, headerData["width"]*headerData["height"]*2, 2):
+                    value = rawData[i:i+2]
+                    color888 = self.color(int.from_bytes(value, 'big'))
+                    outputImage.putpixel((int((i/2)%headerData["width"]), int((i/2)//headerData["height"])), color888)
+
+                if not scaleFactor == 1:
+                    outputImage = outputImage.resize((headerData["width"]*scaleFactor, headerData["height"]*scaleFactor), Image.Resampling.NEAREST)
+
+            else:
+                f.close()
+                raise ValueError("Unsupported file version")
 
         self.convertedImage = outputImage
     
@@ -424,9 +452,8 @@ class main_window(ttk.Window):
 
                 for i in range(max(1, headerData["frameTime"]//self.frameTime_ms)):
                     frames.append(self.convertedImage)
-                    print(i)
+                    self.update()
 
-                self.update_idletasks()
                 self.selectedFileIndex.set(filesToExport.index(file) + 1)
 
             self.select_file(int(self.selectedFileIndex.get()))
