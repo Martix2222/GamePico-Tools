@@ -3,6 +3,10 @@ import ttkbootstrap.toast as popup
 from ttkbootstrap.constants import *
 from ttkbootstrap.dialogs import Messagebox
 
+import numpy as np
+
+import time
+
 from typing import TypedDict
 
 from tkinter.filedialog import askdirectory
@@ -323,20 +327,25 @@ class main_window(ttk.Window):
        
 
     @staticmethod
-    def color(value565):
+    def color_array_convert(values565:np.ndarray) -> np.ndarray:
         """ 
         Converts the 16-bit color format to the 24-bit RGB format.
+        Arguments:
+            values565 (ndarray): ndarray of shape (H, W) or flat, dtype=uint16
+        
+        Returns:
+            ndarray: of shape (H, W, 3), dtype=uint8
         """
-        r5 = (value565 >> 11) & 0x1F
-        g6 = (value565 >> 5) & 0x3F
-        b5 = value565 & 0x1F
+        r5 = (values565 >> 11) & 0x1F
+        g6 = (values565 >> 5) & 0x3F
+        b5 = values565 & 0x1F
 
         # Convert to 8-bit (0–255) by scaling:
-        r8 = (r5 * 255) // 31
-        g8 = (g6 * 255) // 63
-        b8 = (b5 * 255) // 31
+        r8 = ((r5 * 255) // 31).astype(np.uint8)
+        g8 = ((g6 * 255) // 63).astype(np.uint8)
+        b8 = ((b5 * 255) // 31).astype(np.uint8)
 
-        return (r8, g8, b8)
+        return np.stack((r8, g8, b8), axis=-1)
 
 
     @staticmethod
@@ -365,12 +374,13 @@ class main_window(ttk.Window):
 
 
     def load_and_convert_image(self, path, scaleFactor:int = 1): 
-        print(f"Converting image: {path}")
         headerData = self.read_file_header(path)
         outputImage = Image.new("RGB", (headerData["width"], headerData["height"]))
 
         with open(path, 'rb') as f:
             if headerData["version"] == 1:
+                print(f"Loading image data: {path}")
+                startTime = time.time_ns()
                 # Decompress data if the gzip compression flag is True
                 if headerData["gzip"]:
                     try:
@@ -390,20 +400,31 @@ class main_window(ttk.Window):
                     rawData = f.read()
 
                 f.close()
+                print(f"Elapsed {(time.time_ns() - startTime)//1000/1000} ms")
 
-                for i in range(0, headerData["width"]*headerData["height"]*2, 2):
-                    value = rawData[i:i+2]
-                    color888 = self.color(int.from_bytes(value, 'big'))
-                    outputImage.putpixel((int((i/2)%headerData["width"]), int((i/2)//headerData["height"])), color888)
-
-                if not scaleFactor == 1:
-                    outputImage = outputImage.resize((headerData["width"]*scaleFactor, headerData["height"]*scaleFactor), Image.Resampling.NEAREST)
+                print(f"Converting image, ", end="")
+                startTime = time.time_ns()
+                outputImage = self.convert_image(rawData, headerData["width"], headerData["height"])
+                print(f"elapsed {(time.time_ns() - startTime)//1000/1000} ms")
 
             else:
                 f.close()
                 raise ValueError("Unsupported file version")
 
         self.convertedImage = outputImage
+
+    
+    def convert_image(self, raw_data, width, height):
+        # Convert raw RGB565 data from a bytearray to a NumPy array
+        image_data_565 = np.frombuffer(raw_data, dtype='>u2').reshape((height, width))
+
+        # Convert the RGB565 array to RGB888 array
+        rgb888_data = self.color_array_convert(image_data_565)
+
+        # Create the image using Pillow
+        img = Image.fromarray(rgb888_data, 'RGB')
+
+        return img
     
 
     def save_image(self, inputPath, savePath):
