@@ -14,7 +14,6 @@ from tkinter.filedialog import askdirectory
 from PIL import Image, ImageTk
 
 import gzip
-# TODO implement file decompression
 
 import os
 
