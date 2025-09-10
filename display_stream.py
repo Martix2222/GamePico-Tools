@@ -111,7 +111,6 @@ class main_window(ttk.Window):
     
     def check_data_available(self):
         try:
-            print("Requesting data...")
             self.serialPort.writelines(["ready\n".encode("utf-8")])
             if self.serialPort.in_waiting > 0:
                 self.serialPort.read(2)
@@ -217,7 +216,6 @@ class main_window(ttk.Window):
                 self.serialPort.writelines(["continue\n".encode("utf-8")])
             else:
                 self.serialPort.writelines(["retry\n".encode("utf-8")])
-                print("re" + str(len(packet)))
 
             if (time.time_ns() - startTime)//10000000 > timeoutMs:
                 print("Request timeout!")
